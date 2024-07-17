@@ -1,10 +1,9 @@
 import argparse
 import boto3
 
-default_deployments_to_keep = None
+default_number_deployments_to_keep = 2
 default_delete_older_than_days = None
 default_bucket_name = "localstack-test-bucket"
-
 
 def connect_to_s3():
     endpoint_url = "http://localhost.localstack.cloud:4566"
@@ -43,22 +42,45 @@ def determine_prefix_dates(s3_client, deployments):
     deployments_enriched_with_dates = sorted(deployments_enriched_with_dates, key=lambda x: x['LastModified'])
     return deployments_enriched_with_dates
 
-def parse_deployments_to_keep(deployments_sorted_by_creation, deployments_to_keep, delete_older_than_days):
-    pass
+def parse_deployments_to_keep(deployments_sorted_by_creation, number_deployments_to_keep, delete_older_than_days):
+    deployments_to_keep = []
+    deployments_to_keep.append(deployments_sorted_by_creation[-number_deployments_to_keep:])
+    deployments_to_keep_keys = [deployment['Key'].split('/')[0] for deployment in deployments_to_keep]
+    return deployments_to_keep_keys
 
-def main(deployments_to_keep, delete_older_than_days):
+def parse_deployments_to_delete(s3_client, deployments, deployments_to_keep):
+    deployments_to_delete = []
+    for deployment in deployments:
+        if deployment not in deployments_to_keep:
+            deployments_to_delete.append(deployment)
+    return deployments_to_delete
+
+def delete_deployment_objects(s3_client, deployments_to_delete):
+    objects_to_delete = []
+    for deployment in deployments_to_delete:
+        response = s3_client.list_objects_v2(Bucket=default_bucket_name, Prefix=deployment)
+        for object in response['Contents']:
+            objects_to_delete.append({'Key': object['Key']})
+    if objects_to_delete:
+        response = s3_client.delete_objects(Bucket=default_bucket_name, Delete={'Objects': objects_to_delete})
+        print(response)
+
+def main(number_deployments_to_keep, delete_older_than_days):
     s3_client = connect_to_s3()
     deployments = list_s3_bucket_prefixes(s3_client, default_bucket_name)
     deployments_sorted_by_creation = determine_prefix_dates(s3_client, deployments)
-    deployments_to_retain = parse_deployments_to_keep(deployments_sorted_by_creation, deployments_to_keep, delete_older_than_days)
+    deployments_to_keep = parse_deployments_to_keep(deployments_sorted_by_creation, number_deployments_to_keep, delete_older_than_days)
+    deployments_to_delete = parse_deployments_to_delete(s3_client, deployments, deployments_to_keep)
+    delete_deployment_objects(s3_client, deployments_to_delete)
+    # delete_expired_deployments(deployments_to_delete)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Process my inputs!')
-    parser.add_argument('--deployments_to_keep', type=int, help='The number of most recent deploys to keep. Any deployments older than these will be deleted.', default=default_deployments_to_keep)
+    parser.add_argument('--number_deployments_to_keep', type=int, help='The number of most recent deploys to keep. Any deployments older than these will be deleted.', default=default_number_deployments_to_keep)
     parser.add_argument('--delete_older_than_days', type=int, help='The age in days of deploys to keep. Any deployments older than this value will be deleted. If you also pass deployments_to_keep, at least that number will be retained, even if older than this argument value.', default=default_delete_older_than_days)
   
     args = parser.parse_args()
-    main(args.deployments_to_keep, args.delete_older_than_days)
+    main(args.number_deployments_to_keep, args.delete_older_than_days)
 
 ## pseudo code for functions
 # create s3 client
