@@ -1,7 +1,7 @@
 import argparse
 import boto3
 
-default_number_deployments_to_keep = 2
+default_number_deployments_to_keep = 1
 default_delete_older_than_days = None
 default_bucket_name = "localstack-test-bucket"
 
@@ -43,9 +43,9 @@ def determine_prefix_dates(s3_client, deployments):
     return deployments_enriched_with_dates
 
 def parse_deployments_to_keep(deployments_sorted_by_creation, number_deployments_to_keep, delete_older_than_days):
-    deployments_to_keep = []
-    deployments_to_keep.append(deployments_sorted_by_creation[-number_deployments_to_keep:])
-    deployments_to_keep_keys = [deployment['Key'].split('/')[0] for deployment in deployments_to_keep]
+    deployments_to_keep = deployments_sorted_by_creation[-number_deployments_to_keep:]
+    deployments_to_keep_keys = [deployment['Key'].split('/')[0] + '/' for deployment in deployments_to_keep]
+    print(f"Deployments to keep: {deployments_to_keep_keys}")
     return deployments_to_keep_keys
 
 def parse_deployments_to_delete(s3_client, deployments, deployments_to_keep):
@@ -53,6 +53,7 @@ def parse_deployments_to_delete(s3_client, deployments, deployments_to_keep):
     for deployment in deployments:
         if deployment not in deployments_to_keep:
             deployments_to_delete.append(deployment)
+    print(f"Deployments to delete: {deployments_to_delete}")
     return deployments_to_delete
 
 def delete_deployment_objects(s3_client, deployments_to_delete):
@@ -62,6 +63,7 @@ def delete_deployment_objects(s3_client, deployments_to_delete):
         for object in response['Contents']:
             objects_to_delete.append({'Key': object['Key']})
     if objects_to_delete:
+        print(f"Deleting objects: {objects_to_delete}")
         response = s3_client.delete_objects(Bucket=default_bucket_name, Delete={'Objects': objects_to_delete})
         print(response)
 
@@ -71,7 +73,7 @@ def main(number_deployments_to_keep, delete_older_than_days):
     deployments_sorted_by_creation = determine_prefix_dates(s3_client, deployments)
     deployments_to_keep = parse_deployments_to_keep(deployments_sorted_by_creation, number_deployments_to_keep, delete_older_than_days)
     deployments_to_delete = parse_deployments_to_delete(s3_client, deployments, deployments_to_keep)
-    delete_deployment_objects(s3_client, deployments_to_delete)
+    # delete_deployment_objects(s3_client, deployments_to_delete)
     # delete_expired_deployments(deployments_to_delete)
 
 if __name__ == "__main__":
@@ -100,3 +102,8 @@ if __name__ == "__main__":
 # How to handle aws auth in CI?
 # Current issue I'm thinking about is how to decide what is the canonical "date" for a "directory" of objects. s3 doesn't actually have directories, just has objects with prefixes. 
 # I can take the last modified date of the most recently modified object in a "directory" as the "date" of the "directory".
+# TODO: Verify what's being deleted. I think this is wrong. 
+# TODO: add log statements to describe process
+# TODO: add error handling
+# TODO: support "delete_older_than_days" 
+# TODO: add tests, CI, etc 
