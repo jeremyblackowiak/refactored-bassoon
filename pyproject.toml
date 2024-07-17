@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "s3-cleanup"
+version = "0.1.0"
+description = ""
+authors = ["Jeremy Blackowiak <jcblackowiak@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+boto3 = "^1.18.62"
+localstack = "^3.5.0"
+awscli-local = "^0.22.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
