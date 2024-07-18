@@ -7,7 +7,6 @@ from logbook import Logger, StreamHandler
 from logbook.more import colorize
 import logbook
 from config import (
-    default_delete_older_than_days,
     kept_deployments_minimum,
     bucket_name,
     default_s3_endpoint_url
@@ -32,7 +31,6 @@ def validate_args(number_deployments_to_keep, delete_older_than_days):
 
 
 def connect_to_s3():
-    # TODO: make this configurable for localstack or real AWS
     endpoint_url = default_s3_endpoint_url
     client = boto3.client("s3", endpoint_url=endpoint_url)
     return client
@@ -61,15 +59,14 @@ def determine_prefix_dates(s3_client, deployments):
         deployment_objects_call = s3_client.list_objects_v2(
             Bucket=bucket_name, Prefix=deployment
         )
-        # Find the most recently modified object? Idk
+        # Find the most recently modified object for thie prefix
         deployment_objects_contents = deployment_objects_call.get("Contents", [])
-        # This sorts by last modified. But what's the actual sort order? Need to confirm.
         sorted_deployments = sorted(
             deployment_objects_contents, key=lambda x: x["LastModified"]
         )
         # Grabbing last item in the list, aka the most recent
         deployments_enriched_with_dates.append(sorted_deployments[-1])
-    # this is a list of dicts. each dict is a representative object for a given prefix.
+    # Deployments_enriched_with_dates is a list of dicts. Each dict is a representative object for a given prefix.
     # it would probably be cleaner to create a dict with values "deployment" and "calculated_last_modified"
     # I'm also sorting the final list for the rest of the script
     deployments_enriched_with_dates = sorted(
@@ -196,20 +193,29 @@ def log_summary(
 
 def main(number_deployments_to_keep, delete_older_than_days):
     try:
+        # Make sure the args make sense, no conflicting minimums. Also, set the calculated minimum.
         validate_args(number_deployments_to_keep, delete_older_than_days)
+        # Initialize the S3 client
         s3_client = connect_to_s3()
+        # Get a list of all top level prefixes
         deployments = list_s3_bucket_prefixes(s3_client, bucket_name)
+        # Get a representative object for each prefix, sorted by last modified date
         deployments_sorted_by_creation = determine_prefix_dates(s3_client, deployments)
+        # Here's where the most logic happens. Depending on passed values, determine which deployments to keep. 
         deployments_to_keep = parse_deployments_to_keep(
             deployments_sorted_by_creation,
             number_deployments_to_keep,
             delete_older_than_days,
         )
+        # Use the deployments to keep to determine which deployments to delete.
         deployments_to_delete = parse_deployments_to_delete(
             deployments, deployments_to_keep
         )
+        # Loop through each deployment prefix to get all objects to delete
         objects_to_delete = parse_objects_to_delete(s3_client, deployments_to_delete)
+        # Delete the objects
         delete_deployment_objects(s3_client, objects_to_delete)
+        # Collect some data to present the user.
         log_summary(
             deployments, deployments_to_keep, deployments_to_delete, objects_to_delete
         )
@@ -224,12 +230,12 @@ if __name__ == "__main__":
         "--number_deployments_to_keep",
         type=int,
         required=True,
-        help="The number of most recent deploys to keep. Any deployments older than these will be deleted.",
+        help=f"The number of most recent deploys to keep. Any deployments older than these will be deleted. Cannot be less than {kept_deployments_minimum}.",
     )
     parser.add_argument(
         "--delete_older_than_days",
         type=int,
-        help="The age in days of deploys to keep. Any deployments older than this value will be deleted. If you also pass deployments_to_keep, at least that number will be retained, even if older than this argument value.",
+        help="The age in days of deploys to keep. Any deployments older than this value will be deleted. You must also pass deployments_to_keep. At least that number will be retained, even if older than this argument value.",
     )
 
     args = parser.parse_args()

@@ -30,7 +30,7 @@ s3-bucket-name
 	klljkjkl123/...
 ```
 
-The script takes an input of `{x}` "deployments" to keep and deletes the rest. It also takes a `{Y}` input for the number of days, deleting any deployments older than that value while respecting a minimum number of deployments to keep.
+The script takes an input of `{x}` "deployments" to keep and deletes the rest. It also takes a `{Y}` input for the number of days, deleting any deployments older than that value while respecting a minimum number of deployments to keep. For a quick summary of each function, see the comments in the [main() function](./s3-cleanup/main.py#L194).
 
 ## Overview
 
