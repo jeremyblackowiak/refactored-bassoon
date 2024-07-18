@@ -51,6 +51,7 @@ The script takes an input of `{x}` "deployments" to keep and deletes the rest. I
 - Reduce the number of AWS API calls by optimizing the code.
 - Find a more elegant way to determine the deployment date than just choosing an object with the most recent "LastModified" date under a given prefix. 
 - Trim imports to only include what is necessary.
+- Handle pagination. My test case was only a few objects, but of course you could realistically have thousands. 
 
 ## Prerequisites
 
