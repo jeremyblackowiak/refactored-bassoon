@@ -6,14 +6,16 @@ import traceback
 from logbook import Logger, StreamHandler
 from logbook.more import colorize
 import logbook
+from config import (
+    default_delete_older_than_days,
+    kept_deployments_minimum,
+    bucket_name,
+    default_s3_endpoint_url
+)
 
 StreamHandler(sys.stdout).push_application()
 logbook.set_datetime_format("local")
 log = Logger("")
-
-default_delete_older_than_days = None
-kept_deployments_minimum = 1
-default_bucket_name = "localstack-test-bucket"
 
 
 def validate_args(number_deployments_to_keep, delete_older_than_days):
@@ -31,7 +33,7 @@ def validate_args(number_deployments_to_keep, delete_older_than_days):
 
 def connect_to_s3():
     # TODO: make this configurable for localstack or real AWS
-    endpoint_url = "http://localhost.localstack.cloud:4566"
+    endpoint_url = default_s3_endpoint_url
     client = boto3.client("s3", endpoint_url=endpoint_url)
     return client
 
@@ -57,7 +59,7 @@ def determine_prefix_dates(s3_client, deployments):
     deployments_enriched_with_dates = []
     for deployment in deployments:
         deployment_objects_call = s3_client.list_objects_v2(
-            Bucket=default_bucket_name, Prefix=deployment
+            Bucket=bucket_name, Prefix=deployment
         )
         # Find the most recently modified object? Idk
         deployment_objects_contents = deployment_objects_call.get("Contents", [])
@@ -157,7 +159,7 @@ def parse_objects_to_delete(s3_client, deployments_to_delete):
     objects_to_delete = []
     for deployment in deployments_to_delete:
         response = s3_client.list_objects_v2(
-            Bucket=default_bucket_name, Prefix=deployment
+            Bucket=bucket_name, Prefix=deployment
         )
         for object in response["Contents"]:
             objects_to_delete.append({"Key": object["Key"]})
@@ -173,7 +175,7 @@ def delete_deployment_objects(s3_client, objects_to_delete):
     log.info(colorize("blue", "Deleting objects. This may take some time."))
     try:
         s3_client.delete_objects(
-            Bucket=default_bucket_name, Delete={"Objects": objects_to_delete}
+            Bucket=bucket_name, Delete={"Objects": objects_to_delete}
         )
     except Exception as e:
         log.error(f"Error deleting objects: {e}")
@@ -196,7 +198,7 @@ def main(number_deployments_to_keep, delete_older_than_days):
     try:
         validate_args(number_deployments_to_keep, delete_older_than_days)
         s3_client = connect_to_s3()
-        deployments = list_s3_bucket_prefixes(s3_client, default_bucket_name)
+        deployments = list_s3_bucket_prefixes(s3_client, bucket_name)
         deployments_sorted_by_creation = determine_prefix_dates(s3_client, deployments)
         deployments_to_keep = parse_deployments_to_keep(
             deployments_sorted_by_creation,
