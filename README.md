@@ -65,7 +65,7 @@ Before you begin, ensure you have the following:
 
 - **ASDF:** Installed. Follow the instructions on the [ASDF GitHub page](https://github.com/asdf-vm/asdf) to install it.
 
-## First Time Setup, Metadata, and Infrastructure
+## Using the project
 
 ### Basic Setup
 
