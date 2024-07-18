@@ -2,6 +2,24 @@
 
 Welcome to `s3-cleanup`! This project is meant to demonstrate a method for deleting s3 objects. 
 
+The project assumes your target bucket has objects in a format like below, where the top level prefix represents a deployment directory.
+
+```
+s3-bucket-name
+	deployhash112/index.html
+				 /css/font.css
+				 /images/hey.png 
+	dsfsfsl9074/root.html
+				 /styles/font.css
+				 /img/hey.png 
+  	delkjlkploy3/base.html
+				 /fonts/font.css
+				 /png/hey.png 
+  	dsfff1234321/...
+  	klljkjkl123/...
+```
+
+We'll take an input of `{x}` "deployments" we'd like to keep, and expect the script to delete the rest. We'll also take a `{Y}` input for number of days, deleting any deployments older than that value while respecting a minimum number of deployments we want to keep regardless. 
 
 ## Overview
 
@@ -71,5 +89,3 @@ Before you begin, ensure you have the following:
 6. Run `poetry run awslocal s3 sync s3-cleanup/example_data/ s3://localstack-test-bucket` to seed test data.
 7. In s3-cleanup/config.py, update `bucket_name` to `localstack-test-bucket`, or whatever you named your bucket. Optionally, update `kept_deployments_minimum` to your desired number of deployments to keep, regardless of what a user passes as a script input at runtime. Uncomment the `default_s3_endpoint_url` line pointing to localstack.
 8. Run steps 6 or 7 as desired. 
-
-
