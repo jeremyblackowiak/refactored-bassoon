@@ -144,34 +144,3 @@ if __name__ == "__main__":
   
     args = parser.parse_args()
     main(args.number_deployments_to_keep, args.delete_older_than_days)
-
-## pseudo code for functions
-# create s3 client
-# get list of bucket contents
-# sort deployments keys by date created
-# determine which deployments to keep using args and filter logic 
-
-## Notes / doodles
-# How separated should the exercise's primary delete function + the bonus instruction be? Same script, different functions? Different scripts?
-# How to orchestrate usage of localstack for local dev? For CI? Could use NX. Needs to boot it, then create the creds, create the bucket, then create the data.
-    # localstack cmds for now
-        # poetry run awslocal iam create-user --user-name test
-        # poetry run awslocal iam create-access-key --user-name test
-            # place as env vars
-        # poetry run awslocal s3 mb s3://localstack-test-bucket
-        # poetry run awslocal s3 sync s3-cleanup/example_data/ s3://localstack-test-bucket
-# How to handle aws auth in CI?
-# TODO: Verify what's being deleted. I think this is wrong. 
-# TODO: add log statements to describe process
-# TODO: add error handling
-# TODO: support "delete_older_than_days" 
-# TODO: add tests, CI, etc 
-
-# Improvements Roadmap 
-# Making more AWS calls than I need to. 
-# Find a more elegant way to determine deployment date than just choosing the most recent object on a prefix. Right now "deployments_sorted_by_creation" is kind of a misnomer. 
-# Add logging / error handling
-# separate out the functions into a class
-# trim imports to just what I need
-# add at least one test assertion 
-# add a check flag to see what would happen without actually deleting anything

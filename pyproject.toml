@@ -11,6 +11,7 @@ boto3 = "^1.18.62"
 localstack = "^3.5.0"
 awscli-local = "^0.22.0"
 logbook = "^1.7.0.post0"
+black = "^24.4.2"
 
 [build-system]
 requires = ["poetry-core"]
