@@ -10,6 +10,7 @@ python = "^3.9"
 boto3 = "^1.18.62"
 localstack = "^3.5.0"
 awscli-local = "^0.22.0"
+logbook = "^1.7.0.post0"
 
 [build-system]
 requires = ["poetry-core"]

@@ -1,6 +1,13 @@
 import argparse
 import boto3
 import datetime
+import traceback
+from logbook import Logger
+from logbook.more import colorize
+import logbook
+
+logbook.set_datetime_format("local")
+log = Logger("")
 
 # TODO make this "None" when done testing. Maybe move to a config file. 
 default_number_deployments_to_keep = 2
@@ -20,18 +27,17 @@ def connect_to_s3():
     endpoint_url = "http://localhost.localstack.cloud:4566"
     client = boto3.client('s3', endpoint_url=endpoint_url)
     return client
-    result = client.list_buckets()
-    print(result)
-    pass
 
 def list_s3_bucket_prefixes(s3_client, bucket_name):
-    top_level_directories = []
+    deployment_directories = []
     paginator = s3_client.get_paginator('list_objects')
     result = paginator.paginate(Bucket=bucket_name, Delimiter='/')
     for prefix in result.search('CommonPrefixes'):
-        top_level_directories.append(prefix.get('Prefix'))
-    # print(top_level_directories)
-    return top_level_directories
+        deployment_directories.append(prefix.get('Prefix'))
+    if len(deployment_directories) < kept_deployments_minimum_calculated:
+        log.error(colorize("red",f"Only {len(deployment_directories)} deployments found. Cannot meet minimum requirement of {kept_deployments_minimum_calculated}."))
+        raise Exception
+    return deployment_directories
     # response = s3_client.list_objects_v2(Bucket=bucket_name)
     # call_contents = response.get('Contents', [])
     # print(call_contents)
@@ -54,50 +60,80 @@ def determine_prefix_dates(s3_client, deployments):
     return deployments_enriched_with_dates
 
 def parse_deployments_to_keep(deployments_sorted_by_creation, number_deployments_to_keep, delete_older_than_days):
+    # If delete_older_than_days is passed, we need to calculate the expiration date
     if delete_older_than_days and number_deployments_to_keep:
         expiration_date = datetime.datetime.now() - datetime.timedelta(days=delete_older_than_days)
         print(f"Expiration date: {expiration_date}")
-        deployments_to_keep_keys = [deployment['Key'].split('/')[0] + '/' for deployment in deployments_to_keep if deployment['LastModified'] > expiration_date]
-        if len(deployments_to_keep_keys) < max(number_deployments_to_keep, kept_deployments_minimum):
-            print(f"Warning: Not enough deployments to meet minimum. Keeping {len(deployments_to_keep_keys)} deployments.")
-        print(f"Deployments to keep: {deployments_to_keep_keys}")
+        # Extract deployments newer than the expiration date
+        deployments_newer_than_expiration_date = [deployment for deployment in deployments_to_keep if deployment['LastModified'] > expiration_date]
+        # If there aren't enough matching deployments, keep the higher of the provided minimum or hardcoded minimum
+        log.info(colorize("blue,"f"Provided minimum deployments to keep: {number_deployments_to_keep}."))
+        log.info(colorize("blue,"f"Hardcoded minimum deployments to keep: {kept_deployments_minimum}."))
+        log.info(colorize("blue,"f"Larger of the two: {kept_deployments_minimum_calculated}."))
+        if len(deployments_newer_than_expiration_date) < kept_deployments_minimum_calculated:
+            log.warn(colorize("yellow",f"Warning: Not enough deployments to meet minimum. Keeping {kept_deployments_minimum_calculated} deployments."))
+            deployments_to_keep = deployments_sorted_by_creation[-kept_deployments_minimum_calculated:]
+        else:
+            deployments_to_keep = deployments_newer_than_expiration_date
     elif number_deployments_to_keep:
         deployments_to_keep = deployments_sorted_by_creation[-number_deployments_to_keep:]
-        deployments_to_keep_keys = [deployment['Key'].split('/')[0] + '/' for deployment in deployments_to_keep]
-        print(f"Deployments to keep: {deployments_to_keep_keys}")
     else:
-        raise Exception("Something went wrong. Exiting.")
-    # return deployments_to_keep_keys
+        log.error("Could not determine deployments to keep. Something went wrong.")
+        raise Exception
+    deployments_to_keep_prefixes = [deployment['Key'].split('/')[0] + '/' for deployment in deployments_to_keep]
+    log.info(f"Deployments to keep: {len(deployments_to_keep)}")
+    return deployments_to_keep_prefixes
 
-def parse_deployments_to_delete(s3_client, deployments, deployments_to_keep):
+def parse_deployments_to_delete(deployments, deployments_to_keep):
     deployments_to_delete = []
     for deployment in deployments:
         if deployment not in deployments_to_keep:
             deployments_to_delete.append(deployment)
-    print(f"Deployments to delete: {deployments_to_delete}")
+    log.info(f"Deployments to delete: {len(deployments_to_delete)}")
     return deployments_to_delete
 
-def delete_deployment_objects(s3_client, deployments_to_delete):
+def parse_objects_to_delete(s3_client, deployments_to_delete):
     objects_to_delete = []
     for deployment in deployments_to_delete:
         response = s3_client.list_objects_v2(Bucket=default_bucket_name, Prefix=deployment)
         for object in response['Contents']:
             objects_to_delete.append({'Key': object['Key']})
     if objects_to_delete:
-        print(f"Deleting objects: {objects_to_delete}")
-        response = s3_client.delete_objects(Bucket=default_bucket_name, Delete={'Objects': objects_to_delete})
-        print(response)
+        return objects_to_delete
+    else:
+        log.error("No objects to delete. This doesn't make sense.")
+        raise Exception
+
+def delete_deployment_objects(s3_client, objects_to_delete):
+    log.info(f"Total objects to delete: {len(objects_to_delete)}")
+    log.info(colorize("blue","Deleting objects. This may take some time."))
+    try: 
+        s3_client.delete_objects(Bucket=default_bucket_name, Delete={'Objects': objects_to_delete})
+    except Exception as e:
+        log.error(f"Error deleting objects: {e}")
+        raise Exception
+    log.info("Objects deleted.")
+
+def log_summary(deployments, deployments_to_keep, deployments_to_delete, objects_to_delete):
+    log.info("Summary:")
+    log.info(f"Total deployments at start: {len(deployments)}")
+    log.info(f"Deployments kept: {len(deployments_to_keep)}")
+    log.info(f"Deployments deleted: {len(deployments_to_delete)}. Total objects deleted: {len(objects_to_delete)}")
 
 def main(number_deployments_to_keep, delete_older_than_days):
-    validate_args(number_deployments_to_keep, delete_older_than_days)
-    s3_client = connect_to_s3()
-    deployments = list_s3_bucket_prefixes(s3_client, default_bucket_name)
-    deployments_sorted_by_creation = determine_prefix_dates(s3_client, deployments)
-    deployments_to_keep = parse_deployments_to_keep(deployments_sorted_by_creation, number_deployments_to_keep, delete_older_than_days)
-    # deployments_to_delete = parse_deployments_to_delete(s3_client, deployments, deployments_to_keep)
-    # delete_deployment_objects(s3_client, deployments_to_delete)
-    # delete_expired_deployments(deployments_to_delete)
-    # maybe put the logic here for doing the older than x days ago stuff? 
+    try:
+        validate_args(number_deployments_to_keep, delete_older_than_days)
+        s3_client = connect_to_s3()
+        deployments = list_s3_bucket_prefixes(s3_client, default_bucket_name)
+        deployments_sorted_by_creation = determine_prefix_dates(s3_client, deployments)
+        deployments_to_keep = parse_deployments_to_keep(deployments_sorted_by_creation, number_deployments_to_keep, delete_older_than_days)
+        deployments_to_delete = parse_deployments_to_delete(deployments, deployments_to_keep)
+        objects_to_delete = parse_objects_to_delete(s3_client, deployments_to_delete)
+        delete_deployment_objects(s3_client, objects_to_delete)
+        log_summary(deployments, deployments_to_keep, deployments_to_delete, objects_to_delete)
+    except Exception as e: 
+        print(traceback.format_exc())
+        log.error(f"We got a problem here: {e}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Process my inputs!')
@@ -131,6 +167,8 @@ if __name__ == "__main__":
 
 # Improvements Roadmap 
 # Making more AWS calls than I need to. 
-# Find a more elegant way to determine deployment date than just choosing the most recent object on a prefix.
+# Find a more elegant way to determine deployment date than just choosing the most recent object on a prefix. Right now "deployments_sorted_by_creation" is kind of a misnomer. 
 # Add logging / error handling
 # separate out the functions into a class
+# trim imports to just what I need
+# add at least one test assertion 
